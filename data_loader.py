@@ -1,18 +1,6 @@
 import requests 
 import os
 
-file_url_countries = "https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/ghcnd-countries.txt"
-  
-r = requests.get(file_url_countries) 
-if not os.path.exists('./data/countries.txt'):  
-    os.makedirs('./data')
-    with open("./data/countries.txt", "wb") as countries_txt: 
-        countries_txt.write(r.content)
-    print("File 'countries.txt' successfully downloaded")
-    
-else: 
-    print("File 'countries.txt' already exists")
-
 file_url_stations = "https://www1.ncdc.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.csv"
 
 r = requests.get(file_url_stations)
