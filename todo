@@ -1,0 +1,19 @@
+
+
+    
+
+ALTERNATIVELY, if you only need data for one station:
+
+  - Find the station's name in "ghcnd-stations.txt" and note its station
+    identification code (e.g., PHOENIX AP (Airport) is "USW00023183"); and
+  - Download the data file (i.e., ".dly" file) that corresponds to this code
+    (e.g., "USW00023183.dly" has the data for PHOENIX AP).  
+    Note that the ".dly" file is located in the "all" subdirectory.
+	
+"https://www.ncei.noaa.gov/pub/data/ghcn/daily/all/" + station_id + ".dly"
+
+
+when the user has selected the radius, station amount and has chosen a station, in the next tab: Stationsdaten, the selected stations will be shown, in addition to the years with available data for min and max temperature data.
+based on the start and end year of available data a slider will be shown for the user to select a timeframe.
+the relevant stations will be downloaded and the relevant information extracted
+the selected data will be shown in visual graphs
