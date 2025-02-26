@@ -5,9 +5,14 @@ import plotly.express as px
 import json
 import numpy as np
 from math import radians, sin, cos, sqrt, atan2
+import os
+
+# Import the custom functions from data_loader and clean_data
+from data_loader import download_station_data
+from clean_data import clean_station_data, create_monthly_averages, create_yearly_averages
 
 # Create the Dash app
-app = dash.Dash(__name__)
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
 
 stations_df = pd.read_csv('./data/stations.csv',
                           usecols=['Station_Name', 'Latitude', 'Longitude', 'FirstYear', 'LastYear', 'Station_ID'])
@@ -42,7 +47,9 @@ app.layout = html.Div([
     # Store component to save the selected stations
     dcc.Store(id='selected-stations-store'),
     # Store for button state
-    dcc.Store(id='button-state', data={'active': False}),
+    dcc.Store(id='search-button-state', data={'active': False}),
+    # # Store for selected station
+    # dcc.Store(id='selected-station')
 
     dcc.Tabs([
         dcc.Tab(label= 'Karte - Wetterstationen', children= [
@@ -191,7 +198,7 @@ app.layout = html.Div([
                     html.Br(),                    
 
                     html.Button('Stationen suchen', 
-                            id='place-pin-button',
+                            id='search-stations-button',
                             style={
                                 'width': '100%',
                                 'padding': '10px',
@@ -223,7 +230,10 @@ app.layout = html.Div([
             html.H1('Stationsdaten',
                     style={'textAlign': 'left', 'marginBottom': 20, 'fontWeight': 'bold'}),
             html.Div([
-                html.Div(id='station-data-table')
+                # Container for the station data table
+                html.Div(id='station-data-table'),
+                # Container for the yearly data
+                html.Div(id='yearly-data-container')
             ])
         ])            
     ])
@@ -261,7 +271,7 @@ def update_click_info(clickData):
 @app.callback(
     Output('station-map', 'figure'),
     Output('selected-stations-store', 'data'),
-    Input('place-pin-button', 'n_clicks'),
+    Input('search-stations-button', 'n_clicks'),
     Input('radius-slider', 'value'),
     Input('station-count-slider', 'value'),
     Input('year-from', 'value'),
@@ -313,13 +323,14 @@ def update_station_table(selected_stations):
     
     # Convert stored data directly to DataFrame
     display_df = pd.DataFrame(selected_stations)[
-        ['Station_Name', 'Distance', 'FirstYear', 'LastYear', 'Station_ID']
+        ['Station_Name', 'Distance', 'FirstYear', 'LastYear', 'Station_ID', 'Latitude']  # Added Latitude
     ]
     
     # Round Distance to 2 decimal places
     display_df['Distance'] = display_df['Distance'].round(2)
     
     return dash.dash_table.DataTable(
+        id='stations-table',  # Added the ID here
         data=display_df.to_dict('records'),
         columns=[
             {'name': 'Station Name', 'id': 'Station_Name'},
@@ -336,7 +347,11 @@ def update_station_table(selected_stations):
         style_header={
             'backgroundColor': 'rgb(230, 230, 230)',
             'fontWeight': 'bold'
-        }
+        },
+        style_data_conditional=[{
+            'cursor': 'pointer'
+        }],
+        row_selectable='single'
     )
 
 @app.callback(
@@ -363,6 +378,298 @@ def validate_years(year_from, year_to):
             year_from = year_to
             
     return year_to, year_from
+
+@app.callback(
+    Output('yearly-data-container', 'children'),
+    Input('stations-table', 'selected_rows'),
+    State('stations-table', 'data'),
+    State('year-from', 'value'),  # Add year range inputs
+    State('year-to', 'value'),
+    prevent_initial_call=True
+)
+def display_yearly_data(selected_rows, table_data, year_from, year_to):
+    if not selected_rows:
+        return ""
+    
+    # Get the selected station's data
+    selected_station = table_data[selected_rows[0]]
+    station_id = selected_station['Station_ID']
+    station_lat = selected_station['Latitude']
+    
+    # Check if files exist and create if needed
+    monthly_file = f"./data/stations/{station_id}_monthly.csv"
+    yearly_file = f"./data/stations/{station_id}_yearly.csv"
+    raw_file = f"./data/stations/{station_id}.csv"
+    
+    # Check if we need to download new station data
+    if not (os.path.exists(monthly_file) and os.path.exists(yearly_file)):
+        # Check number of existing stations and remove oldest if necessary
+        station_files = [f for f in os.listdir("./data/stations") if f.endswith('_yearly.csv')]
+        if len(station_files) >= 10:
+            # Get creation times for all station files
+            station_times = []
+            for fname in station_files:
+                station_id_from_file = fname.replace('_yearly.csv', '')
+                files_to_check = [
+                    f"./data/stations/{station_id_from_file}.csv",
+                    f"./data/stations/{station_id_from_file}_monthly.csv",
+                    f"./data/stations/{station_id_from_file}_yearly.csv"
+                ]
+                # Use the oldest file's creation time for each station
+                creation_time = min(os.path.getctime(f) for f in files_to_check if os.path.exists(f))
+                station_times.append((station_id_from_file, creation_time))
+            
+            # Get the oldest station ID
+            oldest_station = min(station_times, key=lambda x: x[1])[0]
+            
+            # Remove the oldest station's files
+            for ext in ['', '_monthly', '_yearly']:
+                old_file = f"./data/stations/{oldest_station}{ext}.csv"
+                if os.path.exists(old_file):
+                    os.remove(old_file)
+        
+        # Now download and process the new station data
+        if download_station_data(station_id):
+            if clean_station_data(station_id):
+                if create_monthly_averages(station_id):
+                    create_yearly_averages(station_id)
+    
+    try:
+        yearly_df = pd.read_csv(yearly_file)
+        monthly_df = pd.read_csv(monthly_file)
+        
+        # Filter data based on selected year range
+        monthly_df = monthly_df[
+            (monthly_df['Year'] >= year_from) & 
+            (monthly_df['Year'] <= year_to)
+        ]
+        
+        is_northern = station_lat >= 0
+        
+        def calculate_seasonal_data(df):
+            seasonal_data = []
+            
+            for year in df['Year'].unique():
+                current_year = df[df['Year'] == year]
+                prev_year = df[df['Year'] == year - 1]
+                
+                if is_northern:
+                    winter_months = pd.concat([
+                        prev_year[prev_year['Month'] == 12] if not prev_year.empty else pd.DataFrame(),
+                        current_year[current_year['Month'].isin([1, 2])]
+                    ])
+                    spring_months = current_year[current_year['Month'].isin([3, 4, 5])]
+                    summer_months = current_year[current_year['Month'].isin([6, 7, 8])]
+                    fall_months = current_year[current_year['Month'].isin([9, 10, 11])]
+                else:
+                    summer_months = pd.concat([
+                        prev_year[prev_year['Month'] == 12] if not prev_year.empty else pd.DataFrame(),
+                        current_year[current_year['Month'].isin([1, 2])]
+                    ])
+                    fall_months = current_year[current_year['Month'].isin([3, 4, 5])]
+                    winter_months = current_year[current_year['Month'].isin([6, 7, 8])]
+                    spring_months = current_year[current_year['Month'].isin([9, 10, 11])]
+                
+                row_data = {
+                    'Jahr': year,
+                    'Min. (jährlich)': yearly_df[yearly_df['Year'] == year]['TMIN'].iloc[0],
+                    'Max. (jährlich)': yearly_df[yearly_df['Year'] == year]['TMAX'].iloc[0],
+                    'Winter_Min': winter_months['TMIN'].mean().round(2) if not winter_months.empty else None,
+                    'Winter_Max': winter_months['TMAX'].mean().round(2) if not winter_months.empty else None,
+                    'Frühling_Min': spring_months['TMIN'].mean().round(2) if not spring_months.empty else None,
+                    'Frühling_Max': spring_months['TMAX'].mean().round(2) if not spring_months.empty else None,
+                    'Sommer_Min': summer_months['TMIN'].mean().round(2) if not summer_months.empty else None,
+                    'Sommer_Max': summer_months['TMAX'].mean().round(2) if not summer_months.empty else None,
+                    'Herbst_Min': fall_months['TMIN'].mean().round(2) if not fall_months.empty else None,
+                    'Herbst_Max': fall_months['TMAX'].mean().round(2) if not fall_months.empty else None,
+                }
+                seasonal_data.append(row_data)
+            
+            return pd.DataFrame(seasonal_data)
+        
+        combined_df = calculate_seasonal_data(monthly_df)
+        
+        # Filter combined data for selected year range
+        combined_df = combined_df[
+            (combined_df['Jahr'] >= year_from) & 
+            (combined_df['Jahr'] <= year_to)
+        ]
+        
+        return [
+            html.H3(f"{selected_station['Station_Name']}",
+                   style={'marginTop': '20px', 'marginBottom': '10px'}),
+            
+            # Data Table
+            dash.dash_table.DataTable(
+                data=combined_df.to_dict('records'),
+                columns=[
+                    {'name': 'Jahr', 'id': 'Jahr'},
+                    {'name': 'Min. (jährlich)', 'id': 'Min. (jährlich)'},
+                    {'name': 'Max. (jährlich)', 'id': 'Max. (jährlich)'},
+                    {'name': 'Winter Min.', 'id': 'Winter_Min'},
+                    {'name': 'Winter Max.', 'id': 'Winter_Max'},
+                    {'name': 'Frühling Min.', 'id': 'Frühling_Min'},
+                    {'name': 'Frühling Max.', 'id': 'Frühling_Max'},
+                    {'name': 'Sommer Min.', 'id': 'Sommer_Min'},
+                    {'name': 'Sommer Max.', 'id': 'Sommer_Max'},
+                    {'name': 'Herbst Min.', 'id': 'Herbst_Min'},
+                    {'name': 'Herbst Max.', 'id': 'Herbst_Max'}
+                ],
+                style_table={
+                    'overflowX': 'auto',
+                    'overflowY': 'auto',
+                    'maxHeight': '400px'
+                },
+                style_cell={
+                    'textAlign': 'center',
+                    'padding': '10px',
+                    'minWidth': '80px',
+                    'height': '30px'
+                },
+                style_header={
+                    'backgroundColor': 'rgb(230, 230, 230)',
+                    'fontWeight': 'bold',
+                    'textAlign': 'center',
+                    'height': '40px'
+                },
+                style_header_conditional=(
+                    [
+                        {
+                            'if': {'column_id': 'Jahr'},
+                            'color': 'black'
+                        }
+                    ] + 
+                    [
+                        {
+                            'if': {'column_id': col},
+                            'color': '#0000ff'  # Blue for all Min columns
+                        } for col in ['Min. (jährlich)', 'Winter_Min', 'Frühling_Min', 'Sommer_Min', 'Herbst_Min']
+                    ] + 
+                    [
+                        {
+                            'if': {'column_id': col},
+                            'color': '#ff0000'  # Red for all Max columns
+                        } for col in ['Max. (jährlich)', 'Winter_Max', 'Frühling_Max', 'Sommer_Max', 'Herbst_Max']
+                    ]
+                ),
+                style_data_conditional=[
+                    # Yearly
+                    {
+                        'if': {'column_id': 'Min. (jährlich)'},
+                        'color': '#0000ff'
+                    },
+                    {
+                        'if': {'column_id': 'Max. (jährlich)'},
+                        'color': '#ff0000'
+                    },
+                    # Winter
+                    {
+                        'if': {'column_id': 'Winter_Min'},
+                        'color': '#969696'
+                    },
+                    {
+                        'if': {'column_id': 'Winter_Max'},
+                        'color': '#626262'
+                    },
+                    # Spring
+                    {
+                        'if': {'column_id': 'Frühling_Min'},
+                        'color': '#47D45A'
+                    },
+                    {
+                        'if': {'column_id': 'Frühling_Max'},
+                        'color': '#3B7D23'
+                    },
+                    # Summer
+                    {
+                        'if': {'column_id': 'Sommer_Min'},
+                        'color': '#E97132'
+                    },
+                    {
+                        'if': {'column_id': 'Sommer_Max'},
+                        'color': '#CC5316'
+                    },
+                    # Autumn
+                    {
+                        'if': {'column_id': 'Herbst_Min'},
+                        'color': '#75300D'
+                    },
+                    {
+                        'if': {'column_id': 'Herbst_Max'},
+                        'color': '#4C1F08'
+                    }
+                ],
+                sort_action='native'
+            ),
+            
+            # Temperature Graph below the table
+            html.Div([
+                dcc.Graph(
+                    id='temperature-graph',
+                    figure={
+                        'data': [
+                            # Yearly lines
+                            {'x': combined_df['Jahr'], 'y': combined_df['Min. (jährlich)'],
+                             'name': 'Jährlich Min.', 'line': {'color': '#ff0000', 'width': 2}},
+                            {'x': combined_df['Jahr'], 'y': combined_df['Max. (jährlich)'],
+                             'name': 'Jährlich Max.', 'line': {'color': '#0000ff', 'width': 2}},
+                            # Winter lines
+                            {'x': combined_df['Jahr'], 'y': combined_df['Winter_Min'],
+                             'name': 'Winter Min.', 'line': {'color': '#969696', 'width': 2}},
+                            {'x': combined_df['Jahr'], 'y': combined_df['Winter_Max'],
+                             'name': 'Winter Max.', 'line': {'color': '#626262', 'width': 2}},
+                            # Spring lines
+                            {'x': combined_df['Jahr'], 'y': combined_df['Frühling_Min'],
+                             'name': 'Frühling Min.', 'line': {'color': '#47D45A', 'width': 2}},
+                            {'x': combined_df['Jahr'], 'y': combined_df['Frühling_Max'],
+                             'name': 'Frühling Max.', 'line': {'color': '#3B7D23', 'width': 2}},
+                            # Summer lines
+                            {'x': combined_df['Jahr'], 'y': combined_df['Sommer_Min'],
+                             'name': 'Sommer Min.', 'line': {'color': '#E97132', 'width': 2}},
+                            {'x': combined_df['Jahr'], 'y': combined_df['Sommer_Max'],
+                             'name': 'Sommer Max.', 'line': {'color': '#CC5316', 'width': 2}},
+                            # Autumn lines
+                            {'x': combined_df['Jahr'], 'y': combined_df['Herbst_Min'],
+                             'name': 'Herbst Min.', 'line': {'color': '#75300D', 'width': 2}},
+                            {'x': combined_df['Jahr'], 'y': combined_df['Herbst_Max'],
+                             'name': 'Herbst Max.', 'line': {'color': '#4C1F08', 'width': 2}},
+                        ],
+                        'layout': {
+                            'title': 'Temperaturverlauf',
+                            'xaxis': {
+                                'title': 'Jahr',
+                                'tickmode': 'linear',
+                                'dtick': 1,
+                                'fixedrange': True  # Fix x-axis
+                            },
+                            'yaxis': {
+                                'title': 'Temperatur in Grad C',
+                                'fixedrange': True  # Fix y-axis
+                            },
+                            'hovermode': 'x unified',
+                            'legend': {
+                                'x': 1.05,
+                                'y': 1,
+                                'xanchor': 'left'
+                            },
+                            'height': 700,  # Increased height
+                            'uirevision': True,  # Maintains zoom level on updates
+                            'dragmode': False,  # Disable dragging
+                        }
+                    },
+                    config={
+                        'displayModeBar': False,
+                        'staticPlot': False
+                    },
+                    style={'height': '700px'}  # Match container height to figure height
+                )
+            ], style={
+                'marginTop': '20px',
+                'marginBottom': '40px'
+            })
+        ]
+    except Exception as e:
+        return html.Div(f"Error loading data: {str(e)}", style={'color': 'red'})
 
 # Run the app
 if __name__ == '__main__':
