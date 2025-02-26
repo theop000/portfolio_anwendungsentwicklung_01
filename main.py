@@ -9,9 +9,9 @@ from math import radians, sin, cos, sqrt, atan2
 # Create the Dash app
 app = dash.Dash(__name__)
 
-stations_df = pd.read_csv('./data/stations_inventory.csv',
-                          usecols= ['Station_Name', 'Latitude', 'Longitude'])
-stations_df = stations_df.drop_duplicates(subset=['Station_Name'], keep='first')
+stations_df = pd.read_csv('./data/stations.csv',
+                          usecols=['Station_Name', 'Latitude', 'Longitude', 'FirstYear', 'LastYear', 'Station_ID'])
+
 
 # Create the map figure
 fig = px.scatter_map(stations_df,
@@ -66,20 +66,22 @@ app.layout = html.Div([
                 html.Div([
                     html.H3('Sucheinstellungen', style={'marginBottom': '20px'}),
                     
-                    # Radius slider
-                    html.Label('Suchradius (km)', style={'fontWeight': 'bold'}),
-                    dcc.Slider(
-                        id='radius-slider',
+                    # Radius input
+                    html.Label('Suchradius (max. 100km)', style={'fontWeight': 'bold'}),
+                    dcc.Input(
+                        id='radius-slider',  
+                        type='number',
                         min=1,
                         max=100,
                         value=50,
                         step=1,
-                        marks={
-                            1: '1',
-                            25: '25',
-                            50: '50',
-                            75: '75',
-                            100: '100'
+                        style={
+                            'width': '100%',
+                            'padding': '8px',
+                            'marginTop': '5px',
+                            'marginBottom': '10px',
+                            'borderRadius': '4px',
+                            'border': '1px solid #ccc'
                         }
                     ),
                     html.Br(),
@@ -88,10 +90,107 @@ app.layout = html.Div([
                     html.Label('Anzahl der Stationen', style={'fontWeight': 'bold'}),
                     dcc.Slider(id='station-count-slider', min=1, max=10, value=5, step=1),
                     html.Br(),
-                    html.Br(),
                     
-                    # Place Pin button moved to sidebar
-                    html.Button('Pin platzieren', 
+                    # Year range selection
+                    html.Label('Zeitraum auswählen', style={'fontWeight': 'bold'}),
+                    html.Div([
+                        # Left input (Von)
+                        html.Div([
+                            dcc.Input(
+                                id='year-from',
+                                type='number',
+                                min=0,
+                                value=2000,
+                                step=1,
+                                style={
+                                    'width': '100%',
+                                    'padding': '8px',
+                                    'borderRadius': '4px',
+                                    'border': '1px solid #ccc'
+                                }
+                            ),
+                            html.Label('Von', style={
+                                'fontSize': '12px',
+                                'color': '#666',
+                                'marginTop': '4px'
+                            })
+                        ], style={'width': '48%', 'display': 'inline-block'}),
+                        
+                        # Right input (Bis)
+                        html.Div([
+                            dcc.Input(
+                                id='year-to',
+                                type='number',
+                                min=2000,
+                                max=2024,
+                                value=2024,
+                                step=1,
+                                style={
+                                    'width': '100%',
+                                    'padding': '8px',
+                                    'borderRadius': '4px',
+                                    'border': '1px solid #ccc'
+                                }
+                            ),
+                            html.Label('Bis', style={
+                                'fontSize': '12px',
+                                'color': '#666',
+                                'marginTop': '4px'
+                            })
+                        ], style={'width': '48%', 'display': 'inline-block', 'marginLeft': '4%'})
+                    ]),
+                    html.Br(),                    
+                    
+                    # Coordinate inputs
+                    html.Label('Koordinaten eingeben', style={'fontWeight': 'bold'}),
+                    html.Div([
+                        # Left input (Breitengrad)
+                        html.Div([
+                            dcc.Input(
+                                id='latitude-input',
+                                type='number',
+                                value=48.0458,
+                                min=-90,
+                                max=90,
+                                style={
+                                    'width': '100%',
+                                    'padding': '8px',
+                                    'borderRadius': '4px',
+                                    'border': '1px solid #ccc'
+                                }
+                            ),
+                            html.Label('Breitengrad', style={
+                                'fontSize': '12px',
+                                'color': '#666',
+                                'marginTop': '4px'
+                            })
+                        ], style={'width': '48%', 'display': 'inline-block'}),
+                        
+                        # Right input (Längengrad)
+                        html.Div([
+                            dcc.Input(
+                                id='longitude-input',
+                                type='number',
+                                value=8.4617,
+                                min=-180,
+                                max=180,
+                                style={
+                                    'width': '100%',
+                                    'padding': '8px',
+                                    'borderRadius': '4px',
+                                    'border': '1px solid #ccc'
+                                }
+                            ),
+                            html.Label('Längengrad', style={
+                                'fontSize': '12px',
+                                'color': '#666',
+                                'marginTop': '4px'
+                            })
+                        ], style={'width': '48%', 'display': 'inline-block', 'marginLeft': '4%'})
+                    ]),
+                    html.Br(),                    
+
+                    html.Button('Stationen suchen', 
                             id='place-pin-button',
                             style={
                                 'width': '100%',
@@ -146,16 +245,18 @@ def haversine_distance(lat1, lon1, lat2, lon2):
 
 @app.callback(
     Output('click-data', 'children'),
+    Output('latitude-input', 'value'),
+    Output('longitude-input', 'value'),
     Input('station-map', 'clickData'),
     prevent_initial_call=True
 )
 def update_click_info(clickData):
     if not clickData:
-        return "Click on the map to place a pin"
+        return "Click on the map to place a pin", 48.0458, 8.4617
     
     lat = clickData['points'][0]['lat']
     lon = clickData['points'][0]['lon']
-    return f'Selected coordinates: {lat:.4f}, {lon:.4f}'
+    return f'Selected coordinates: {lat:.4f}, {lon:.4f}', lat, lon
 
 @app.callback(
     Output('station-map', 'figure'),
@@ -163,60 +264,70 @@ def update_click_info(clickData):
     Input('place-pin-button', 'n_clicks'),
     Input('radius-slider', 'value'),
     Input('station-count-slider', 'value'),
-    State('station-map', 'clickData'),
+    Input('year-from', 'value'),
+    Input('year-to', 'value'),
+    State('latitude-input', 'value'),
+    State('longitude-input', 'value'),
     State('station-map', 'figure'),
-    prevent_initial_call=True
+    prevent_initial_call=False
 )
-def update_stations_selection(n_clicks, radius_value, count_value, clickData, figure):
-    if not clickData:
-        return figure, None
+def update_stations_selection(n_clicks, radius_value, count_value, year_from, year_to, lat, lon, figure):
+    # Handle the initial call
+    if n_clicks is None:
+        # Calculate initial stations based on default coordinates
+        stations_df['Distance'] = stations_df.apply(
+            lambda row: haversine_distance(lat, lon, row['Latitude'], row['Longitude']), 
+            axis=1
+        )
+        
+        filtered_stations = stations_df[
+            (stations_df['FirstYear'] <= year_to) & 
+            (stations_df['LastYear'] >= year_from) &
+            (stations_df['Distance'] <= radius_value)
+        ].nsmallest(count_value, 'Distance')
+        
+        return figure, filtered_stations.to_dict('records')
     
-    # Get coordinates from click
-    lat = clickData['points'][0]['lat']
-    lon = clickData['points'][0]['lon']
-    
-    # Calculate distances and find closest stations
+    # Rest of the function remains the same
     stations_df['Distance'] = stations_df.apply(
         lambda row: haversine_distance(lat, lon, row['Latitude'], row['Longitude']), 
         axis=1
     )
     
-    closest_stations = stations_df[stations_df['Distance'] <= radius_value].nsmallest(count_value, 'Distance')
+    filtered_stations = stations_df[
+        (stations_df['FirstYear'] <= year_to) & 
+        (stations_df['LastYear'] >= year_from) &
+        (stations_df['Distance'] <= radius_value)
+    ].nsmallest(count_value, 'Distance')
     
-    # Return unchanged figure and the station data
-    return figure, closest_stations.to_dict('records')
+    return figure, filtered_stations.to_dict('records')
 
-# Add new callback for the second tab
 @app.callback(
     Output('station-data-table', 'children'),
     Input('selected-stations-store', 'data'),
-    prevent_initial_call=True
+    prevent_initial_call=False
 )
-def update_station_table(stations_data):
-    if not stations_data:
+def update_station_table(selected_stations):
+    if not selected_stations:
         return "No stations selected"
     
-    # Read the full inventory file
-    inventory_df = pd.read_csv('./data/stations_inventory.csv')
+    # Convert stored data directly to DataFrame
+    display_df = pd.DataFrame(selected_stations)[
+        ['Station_Name', 'Distance', 'FirstYear', 'LastYear', 'Station_ID']
+    ]
     
-    # Convert the stored data to a DataFrame
-    selected_df = pd.DataFrame(stations_data)
+    # Round Distance to 2 decimal places
+    display_df['Distance'] = display_df['Distance'].round(2)
     
-    # Merge with inventory data based on Station_ID
-    merged_df = pd.merge(
-        selected_df,
-        inventory_df,
-        on='Station_Name',
-        how='left'
-    )
-    
-    # Select and reorder columns
-    display_df = merged_df[['Station_Name', 'Distance', 'Element', 'FirstYear', 'LastYear', 'Station_ID']]
-    
-    # Create a formatted table using dash_table
     return dash.dash_table.DataTable(
         data=display_df.to_dict('records'),
-        columns=[{'name': col, 'id': col} for col in display_df.columns],
+        columns=[
+            {'name': 'Station Name', 'id': 'Station_Name'},
+            {'name': 'Distance (km)', 'id': 'Distance'},
+            {'name': 'First Year', 'id': 'FirstYear'},
+            {'name': 'Last Year', 'id': 'LastYear'},
+            {'name': 'Station ID', 'id': 'Station_ID'}
+        ],
         style_table={'overflowX': 'auto'},
         style_cell={
             'textAlign': 'left',
@@ -227,6 +338,31 @@ def update_station_table(stations_data):
             'fontWeight': 'bold'
         }
     )
+
+@app.callback(
+    Output('year-to', 'value'),
+    Output('year-from', 'value'),
+    Input('year-from', 'value'),
+    Input('year-to', 'value'),
+    prevent_initial_call=True
+)
+def validate_years(year_from, year_to):
+    triggered_id = ctx.triggered_id
+    
+    # Ensure values are valid
+    year_from = max(0, min(2024, year_from if year_from else 0)) 
+    year_to = max(0, min(2024, year_to if year_to else 2024))
+    
+    # If "from" year was changed
+    if triggered_id == 'year-from':
+        if year_from > year_to:
+            year_to = year_from
+    # If "to" year was changed
+    elif triggered_id == 'year-to':
+        if year_to < year_from:
+            year_from = year_to
+            
+    return year_to, year_from
 
 # Run the app
 if __name__ == '__main__':

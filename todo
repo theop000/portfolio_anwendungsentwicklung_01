@@ -1,6 +1,17 @@
+Interface:
+
+-Input field: Radius (float)
+|-von 0.01-100 eventuell anpassen, berechnung nach datentyp
+-Slider: Anzahl der Stationen (1-10)
+-Input fields: Zeitraum auswählen (Anfang + Ende)
+|-anfang !< ende
+-Input fields: Koordinaten eingeben (Breitengrad | Längengrad)
+-Beschriftungen anpassen
+-Button: Stationen suchen 
+-on-click auf Station: Breitengrad und Längengrad eintragen
 
 
-    
+Download:
 
 ALTERNATIVELY, if you only need data for one station:
 
@@ -13,7 +24,32 @@ ALTERNATIVELY, if you only need data for one station:
 "https://www.ncei.noaa.gov/pub/data/ghcn/daily/all/" + station_id + ".dly"
 
 
-when the user has selected the radius, station amount and has chosen a station, in the next tab: Stationsdaten, the selected stations will be shown, in addition to the years with available data for min and max temperature data.
-based on the start and end year of available data a slider will be shown for the user to select a timeframe.
-the relevant stations will be downloaded and the relevant information extracted
-the selected data will be shown in visual graphs
+Tabelle:
+
+Jedes Jahr die Temperatur Minima Mittelwerte und Temp. Maxima Mittelwerte berechnen (je einen Datenpunkt pro Jahr)
+Berechnung Mittelwerte:
+Angefangen mit dem zweiten Jahr wo sowohl Minima und Maxima Daten verfügbar sind, da der Winter im Dezember des vorangegangen Jahr
+entspricht, bis November des ausgewählten Jahres (Dadurch denkungsgleich mit der Berechnung der Jahreszeiten)
+Keine Angebrochenen Jahre werden verwendet (z.B. 2025)
+
+Berechnung Jahreszeiten:
+Nordhalbkugel (if latitude >= 0:  # Nordhalbkugel) Winter (Dezember, Januar, Februar) usw. bis Herbst (Ende November)
+Ebenfalls ein Datenpunkt pro Jahreszeit (4 pro Jahr)
+
+Tabellenaufbau:
+Header:
+- Jahres Minima
+- Jahres Maxima
+- Winter Minima
+- Winter Maxima
+- Frühling Minima
+- Frühling Maxima
+- Sommer Minima
+- Sommer Maxima
+- Herbst Minima
+- Herbst Maxima
+Zeilen:
+- pro Jahr eine Zeile (erstes Jahr muss 2. Jahr aus dem Verfügbaren Datensatz sein; abgleich mit stations_inventory.csv)
+
+Grafisch:
+- Header einfärben: Minima blau, Maxima rot

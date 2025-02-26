@@ -2,3 +2,5 @@ dash
 pandas
 plotly
 numpy
+json
+math

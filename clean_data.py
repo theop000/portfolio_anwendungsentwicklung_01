@@ -78,6 +78,8 @@ if not os.path.isfile('./data/stations_inventory.csv'):
 
     stations_inventory_merge_df = stations_inventory_merge_df.drop_duplicates(subset=['Station_ID', 'Element'])
 
+
+
     # Save the merged DataFrame to CSV
     stations_inventory_merge_df.to_csv('./data/stations_inventory.csv', index=False)
     print("\nSaved filtered data to stations_inventory.csv")
@@ -91,3 +93,23 @@ if not os.path.isfile('./data/stations_inventory.csv'):
     print("\nremoved temporary file relevant_stations.csv")
 else:
     print("\nstations_inventory.csv already exists. Skipping processing.")
+
+if not os.path.isfile('./data/stations.csv'):
+    # Read the stations inventory file
+    stations_inventory_df = pd.read_csv('./data/stations_inventory.csv',
+                                      usecols=['Station_ID', 'Latitude', 'Longitude', 'FirstYear', 'LastYear', 'Station_Name'])
+    
+    # Group by Station_ID and aggregate the data
+    stations_df = stations_inventory_df.groupby('Station_ID').agg({
+        'Latitude': 'first',  # Take first value since it is the same for each station
+        'Longitude': 'first', # Take first value since it is the same for each station
+        'FirstYear': 'max',   # Take the highest FirstYear
+        'LastYear': 'min',    # Take the lowest LastYear
+        'Station_Name': 'first' # Take first value since it is the same for each station
+    }).reset_index()
+
+    # Save the aggregated data to stations.csv
+    stations_df.to_csv('./data/stations.csv', index=False)
+    print("\nSaved aggregated station data to stations.csv")
+    os.remove('./data/stations_inventory.csv')
+    print("\nremoved temporary file stations_inventory.csv")
