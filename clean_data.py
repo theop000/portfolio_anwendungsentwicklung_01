@@ -196,8 +196,7 @@ def create_monthly_averages(station_id):
         print(f"Error creating monthly averages for station {station_id}: {e}")
         return False
 
-# Example usage
-create_monthly_averages("GME00129634")
+
 
 def create_yearly_averages(station_id):
     """

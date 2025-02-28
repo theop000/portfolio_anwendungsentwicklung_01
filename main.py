@@ -17,20 +17,19 @@ app = dash.Dash(__name__, suppress_callback_exceptions=True)
 stations_df = pd.read_csv('./data/stations.csv',
                           usecols=['Station_Name', 'Latitude', 'Longitude', 'FirstYear', 'LastYear', 'Station_ID'])
 
-
-# Create the map figure
-fig = px.scatter_map(stations_df,
-                       lat='Latitude',
-                       lon='Longitude',
-                       hover_name='Station_Name',
-                       zoom=4,
-                       height=800)
+# Create the map figure using scatter_mapbox
+fig = px.scatter_mapbox(stations_df,
+                         lat='Latitude',
+                         lon='Longitude',
+                         hover_name='Station_Name',
+                         height=600)
 
 # Set consistent styling
 fig.update_layout(
-    map_style="carto-positron",              # Set consistent map style
-    map=dict(
+    mapbox_style="carto-positron",
+    mapbox=dict(
         center=dict(lat=48.0458, lon=8.4617),
+        zoom=4,
     ),
     margin={"r":0,"t":0,"l":0,"b":0},
     clickmode='event+select'
@@ -38,8 +37,8 @@ fig.update_layout(
 
 # Set consistent marker size for all points
 fig.update_traces(
-    marker=dict(size=3),                        # Set all markers to size 3
-    selector=dict(type='scattermapbox')
+    marker=dict(size=5),  
+    selector=dict(type='scattermapbox')  
 )
 
 # Define the app layout
@@ -610,9 +609,9 @@ def display_yearly_data(selected_rows, table_data, year_from, year_to):
                         'data': [
                             # Yearly lines
                             {'x': combined_df['Jahr'], 'y': combined_df['Min. (jährlich)'],
-                             'name': 'Jährlich Min.', 'line': {'color': '#ff0000', 'width': 2}},
+                             'name': 'Jährlich Min.', 'line': {'color': '#0000ff', 'width': 2}},
                             {'x': combined_df['Jahr'], 'y': combined_df['Max. (jährlich)'],
-                             'name': 'Jährlich Max.', 'line': {'color': '#0000ff', 'width': 2}},
+                             'name': 'Jährlich Max.', 'line': {'color': '#ff0000', 'width': 2}},
                             # Winter lines
                             {'x': combined_df['Jahr'], 'y': combined_df['Winter_Min'],
                              'name': 'Winter Min.', 'line': {'color': '#969696', 'width': 2}},
